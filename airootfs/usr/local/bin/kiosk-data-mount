@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Mountet den persistenten Datenbereich fuer miniclientcontrol.
+#
+# Reihenfolge:
+#   1. ext4-Partition auf einem USB-Geraet mit LABEL=KIOSKDATA
+#   2. sonst erste ext4-Partition auf einem USB-Geraet
+#   3. sonst tmpfs (Daten sind dann fluechtig)
+#
+# Konfiguration ueber /etc/default/miniclientcontrol.
+
+set -euo pipefail
+
+# shellcheck disable=SC1091
+[[ -r /etc/default/miniclientcontrol ]] && . /etc/default/miniclientcontrol
+
+TARGET="${KIOSK_DATA_DIR:-/var/lib/miniclientcontrol}"
+LABEL="${KIOSK_DATA_LABEL:-KIOSKDATA}"
+TMPFS_SIZE="${KIOSK_DATA_TMPFS_SIZE:-512M}"
+WAIT_SECS="${KIOSK_DATA_WAIT:-10}"
+SOURCE_MARKER=/run/kiosk-data.source
+
+log() { printf 'kiosk-data: %s\n' "$*"; }
+
+# Alle ext4-Partitionen auf USB-Geraeten, die noch nicht gemountet sind.
+# Gibt Zeilen "<device> <label>" aus.
+usb_ext4_candidates() {
+    local dev bus label
+    for dev in /dev/sd*[0-9] /dev/mmcblk*p[0-9]* /dev/nvme*n*p[0-9]*; do
+        [[ -b "${dev}" ]] || continue
+        [[ "$(blkid -o value -s TYPE "${dev}" 2>/dev/null)" == ext4 ]] || continue
+        # Bereits gemountet? Nicht anfassen.
+        findmnt -rno TARGET --source "${dev}" >/dev/null 2>&1 && continue
+        bus="$(udevadm info --query=property --name="${dev}" 2>/dev/null |
+               sed -n 's/^ID_BUS=//p')"
+        [[ "${bus}" == usb ]] || continue
+        label="$(blkid -o value -s LABEL "${dev}" 2>/dev/null || true)"
+        printf '%s %s\n' "${dev}" "${label}"
+    done
+}
+
+# USB-Enumeration braucht nach dem Boot einen Moment. Warten, bis ein
+# Kandidat auftaucht oder das Zeitfenster ablaeuft.
+pick_device() {
+    local deadline=$((SECONDS + WAIT_SECS)) dev label
+    while :; do
+        # Erst der bevorzugte Label, dann irgendein ext4-USB-Geraet.
+        while read -r dev label; do
+            [[ "${label}" == "${LABEL}" ]] && { printf '%s' "${dev}"; return 0; }
+        done < <(usb_ext4_candidates)
+
+        dev=""
+        read -r dev label < <(usb_ext4_candidates) || true
+        [[ -n "${dev}" ]] && { printf '%s' "${dev}"; return 0; }
+
+        (( SECONDS >= deadline )) && return 1
+        sleep 1
+    done
+}
+
+mkdir -p -- "${TARGET}"
+
+if mountpoint -q -- "${TARGET}"; then
+    log "${TARGET} ist bereits gemountet, nichts zu tun"
+    exit 0
+fi
+
+device=""
+if device="$(pick_device)"; then
+    log "USB-Datentraeger gefunden: ${device}"
+    # Ein abgezogener Stick hinterlaesst ein unsauberes Dateisystem.
+    # -p reparient nur, was ohne Rueckfrage sicher ist; Fehler sind nicht fatal.
+    if ! timeout 120 fsck.ext4 -p -- "${device}"; then
+        log "WARNUNG: fsck auf ${device} nicht sauber durchgelaufen"
+    fi
+    if mount -t ext4 -o rw,noatime,nodev,nosuid -- "${device}" "${TARGET}"; then
+        log "${device} auf ${TARGET} gemountet, Daten sind persistent"
+        printf 'usb %s\n' "${device}" >"${SOURCE_MARKER}"
+        exit 0
+    fi
+    log "WARNUNG: mount von ${device} fehlgeschlagen, fange auf tmpfs zurueck"
+else
+    log "kein USB-Datentraeger mit ext4 gefunden"
+fi
+
+mount -t tmpfs -o "rw,nosuid,nodev,mode=0755,size=${TMPFS_SIZE}" \
+    kiosk-data "${TARGET}"
+log "${TARGET} als tmpfs (${TMPFS_SIZE}) gemountet, Daten sind FLUECHTIG"
+printf 'tmpfs\n' >"${SOURCE_MARKER}"

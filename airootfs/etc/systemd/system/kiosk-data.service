@@ -1,0 +1,17 @@
+[Unit]
+Description=Kiosk-Datenbereich mounten (USB ext4, sonst tmpfs)
+Documentation=file:///usr/local/bin/kiosk-data-mount
+After=local-fs.target systemd-udevd.service
+Before=miniclientcontrol.service
+ConditionPathExists=/usr/local/bin/kiosk-data-mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/kiosk-data-mount
+# Beim Stoppen nicht unmounten - der Kiosk faehrt sowieso runter, und ein
+# umount waehrend miniclientcontrol noch schreibt waere schlimmer.
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

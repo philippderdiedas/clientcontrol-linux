@@ -1,0 +1,19 @@
+# Konfiguration fuer kiosk-data.service und miniclientcontrol.service
+
+# Wohin der persistente Bereich gemountet wird.
+KIOSK_DATA_DIR=/var/lib/miniclientcontrol
+
+# ext4-LABEL, das bevorzugt als Datentraeger genommen wird.
+# Stick vorbereiten mit:  mkfs.ext4 -L KIOSKDATA /dev/sdX1
+KIOSK_DATA_LABEL=KIOSKDATA
+
+# Groesse des tmpfs-Fallbacks, falls kein Stick steckt.
+KIOSK_DATA_TMPFS_SIZE=512M
+
+# Wie lange auf USB-Enumeration gewartet wird (Sekunden).
+KIOSK_DATA_WAIT=10
+
+# Zusaetzliche Argumente fuer miniclientcontrol.
+# Falls die Binary den Datenpfad als Flag erwartet, hier eintragen, z.B.
+#   MCC_ARGS=--data-dir /var/lib/miniclientcontrol
+MCC_ARGS=

@@ -1,0 +1,16 @@
+# mkarchiso-Arbeits- und Ausgabeverzeichnisse
+/work/
+/out/
+
+# Build-Logs
+/build.log
+
+# Von mkarchiso generiert
+/packages.x86_64.merged
+
+# Rust-Artefakt, wird von build.sh erzeugt
+/airootfs/usr/local/bin/miniclientcontrol
+
+# Rust-Build im Submodule
+/miniclientcontrol/target/
+/cargo/

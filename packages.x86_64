@@ -1,0 +1,37 @@
+# --- Kernel & Firmware ---
+linux
+linux-firmware
+intel-ucode
+amd-ucode
+
+# --- Basissystem (zwingend) ---
+base
+sudo
+openssh
+
+# --- initramfs / PXE-Boot (zwingend für unser Setup) ---
+mkinitcpio
+mkinitcpio-archiso
+mkinitcpio-nfs-utils
+
+# --- Bootloader (für ISO-Build selbst, syslinux-Bootmode in profiledef.sh) ---
+syslinux
+
+# --- Netzwerk zur Laufzeit (nach dem Boot, für Chromium & SSH) ---
+dhcpcd
+
+# --- Grafikstack & Wayland ---
+sway
+swaybg
+
+# --- Audio (für Chromium-Medien) ---
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+
+# --- Webbrowser & Schriften ---
+chromium
+xdg-utils
+ttf-dejavu
+ttf-liberation

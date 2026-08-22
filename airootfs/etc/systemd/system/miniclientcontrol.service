@@ -1,0 +1,21 @@
+[Unit]
+Description=miniclientcontrol
+After=network-online.target kiosk-data.service
+Wants=network-online.target
+Requires=kiosk-data.service
+ConditionPathExists=/usr/local/bin/miniclientcontrol
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/miniclientcontrol
+# Der Datenpfad wird zusaetzlich als Env-Variable durchgereicht, damit die
+# Binary ihn ohne Flag findet. Braucht sie ein Flag, MCC_ARGS in
+# /etc/default/miniclientcontrol setzen.
+Environment=MCC_DATA_DIR=/var/lib/miniclientcontrol
+WorkingDirectory=/var/lib/miniclientcontrol
+ExecStart=/usr/local/bin/miniclientcontrol $MCC_ARGS
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

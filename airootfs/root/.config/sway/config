@@ -1,0 +1,21 @@
+# Kiosk-Session: nur Chromium, kein Panel, keine Deko
+default_border none
+default_floating_border none
+focus_follows_mouse no
+
+# Chromium laeuft hier als root -> ohne --no-sandbox startet es nicht.
+# --ozone-platform=wayland erzwingt den Wayland-Backend statt X11-Fallback.
+exec chromium \
+  --no-sandbox \
+  --ozone-platform=wayland \
+  --kiosk \
+  --start-fullscreen \
+  --no-first-run \
+  --noerrdialogs \
+  --disable-infobars \
+  --disable-session-crashed-bubble \
+  https://archlinux.org
+
+# Notausgang. Ein Terminal ist im Image nicht installiert - falls du eins
+# willst, 'foot' in packages.x86_64 aufnehmen und hier binden.
+bindsym Mod4+Shift+e exit
