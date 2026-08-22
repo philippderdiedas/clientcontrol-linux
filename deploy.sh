@@ -26,7 +26,8 @@ echo "Ziel-Pod: $NS/$POD"
 kern="$OUT/$IDIR/boot/x86_64/vmlinuz-linux"
 init="$OUT/$IDIR/boot/x86_64/initramfs-linux.img"
 sfs="$OUT/$IDIR/x86_64/airootfs.sfs"
-for f in "$kern" "$init" "$sfs"; do
+sha="$OUT/$IDIR/x86_64/airootfs.sha512"
+for f in "$kern" "$init" "$sfs" "$sha"; do
     [ -f "$f" ] || { echo "Artefakt fehlt: $f" >&2; exit 1; }
 done
 
@@ -37,9 +38,10 @@ kubectl -n "$NS" exec "$POD" -- mkdir -p "$ASSETS/x86_64"
 kubectl -n "$NS" cp "$kern" "$POD:$ASSETS/vmlinuz.new"
 kubectl -n "$NS" cp "$init" "$POD:$ASSETS/initrd.new"
 kubectl -n "$NS" cp "$sfs"  "$POD:$ASSETS/x86_64/airootfs.sfs.new"
+kubectl -n "$NS" cp "$sha"  "$POD:$ASSETS/x86_64/airootfs.sha512.new"
 
 # Pruefsummen vergleichen, bevor irgendwas aktiv wird.
-for pair in "vmlinuz.new:$kern" "initrd.new:$init" "x86_64/airootfs.sfs.new:$sfs"; do
+for pair in "vmlinuz.new:$kern" "initrd.new:$init" "x86_64/airootfs.sfs.new:$sfs" "x86_64/airootfs.sha512.new:$sha"; do
     remote="${pair%%:*}"; local_file="${pair#*:}"
     want="$(sha256sum "$local_file" | cut -d' ' -f1)"
     got="$(kubectl -n "$NS" exec "$POD" -- sha256sum "$ASSETS/$remote" | cut -d' ' -f1)"
@@ -59,6 +61,7 @@ cd '$ASSETS'
 mv vmlinuz.new vmlinuz
 mv initrd.new initrd
 mv x86_64/airootfs.sfs.new x86_64/airootfs.sfs
+mv x86_64/airootfs.sha512.new x86_64/airootfs.sha512
 chown -R nbxyz:nbxyz '$ASSETS'
 ls -la '$ASSETS' '$ASSETS/x86_64'"
 echo "Deploy fertig."
