@@ -1,0 +1,3 @@
+[submodule "miniclientcontrol"]
+	path = miniclientcontrol
+	url = ssh://git@git.supercookie.de/clientcontrol/miniclientcontrol.git

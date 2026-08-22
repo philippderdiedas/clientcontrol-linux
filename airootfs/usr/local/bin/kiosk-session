@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Startet miniclientcontrol in der laufenden sway-Session.
+#
+# Wird aus ~/.config/sway/config per exec aufgerufen, NICHT als systemd-Unit:
+# miniclientcontrol startet Chromium selbst und braucht dafuer WAYLAND_DISPLAY
+# und XDG_RUNTIME_DIR aus der Session.
+#
+# Konfiguration, in dieser Reihenfolge - spaeter gewinnt:
+#   1. /etc/default/miniclientcontrol            (im Image, unveraenderlich)
+#   2. <datenmount>/miniclientcontrol.env        (vom USB-Stick, optional)
+#   3. MCC_EXTRA_ARGS aus einer der beiden       (rohe CLI-Flags)
+#
+# Weil in miniclientcontrol jedes Argument als #[arg(long, env)] deklariert ist,
+# wirkt jede exportierte Variable direkt als Flag: PORT=8080 entspricht
+# --port 8080, HTTP_LISTEN=0.0.0.0 entspricht --http-listen 0.0.0.0 usw.
+# Deshalb wird hier mit `set -a` gesourct.
+
+set -euo pipefail
+
+log() { printf 'kiosk-session: %s\n' "$*"; }
+
+set -a
+# shellcheck disable=SC1091
+[[ -r /etc/default/miniclientcontrol ]] && . /etc/default/miniclientcontrol
+
+DATA="${KIOSK_DATA_DIR:-/var/lib/miniclientcontrol}"
+
+# Override vom persistenten Datentraeger. Steckt kein Stick, ist der Mount ein
+# tmpfs und die Datei existiert nicht - dann bleibt es bei den Image-Defaults.
+if [[ -r "${DATA}/miniclientcontrol.env" ]]; then
+    log "lade Override ${DATA}/miniclientcontrol.env"
+    # shellcheck disable=SC1091,SC1090
+    . "${DATA}/miniclientcontrol.env"
+else
+    log "kein Override auf dem Datenbereich, nutze Image-Defaults"
+fi
+set +a
+
+mkdir -p -- "${DATA}/assets"
+
+# Rohe Flags aus MCC_EXTRA_ARGS. Wortweise getrennt, keine Quotes innerhalb -
+# Argumente mit Leerzeichen gehoeren als Env-Variable gesetzt, nicht hierher.
+extra=()
+if [[ -n "${MCC_EXTRA_ARGS:-}" ]]; then
+    read -ra extra <<<"${MCC_EXTRA_ARGS}"
+    log "zusaetzliche Flags: ${extra[*]}"
+fi
+
+# --no-sandbox: Chromium laeuft hier als root und verweigert sonst den Start.
+# --ozone-platform=wayland: sonst faellt es auf X11 zurueck, das es nicht gibt.
+# miniclientcontrol startet Chromium selbst (siehe --no-launch-browser in
+# seiner Hilfe), deshalb wird Chromium hier NICHT separat gestartet.
+exec /usr/local/bin/miniclientcontrol \
+    --assets-dir "${DATA}/assets" \
+    --database-path "${DATA}/miniclient.db" \
+    --chromium-arg=--no-sandbox \
+    --chromium-arg=--ozone-platform=wayland \
+    "${extra[@]}"

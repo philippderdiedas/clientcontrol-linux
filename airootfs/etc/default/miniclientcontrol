@@ -1,9 +1,14 @@
-# Konfiguration fuer kiosk-data.service und miniclientcontrol.service
+# Defaults fuer kiosk-data.service und kiosk-session.
+#
+# Diese Datei liegt im Image und ist damit read-only. Alles hier laesst sich
+# vom USB-Stick ueberschreiben: <datenmount>/miniclientcontrol.env
 
-# Wohin der persistente Bereich gemountet wird.
+# --- Datenbereich --------------------------------------------------------
+
+# Mountpunkt des persistenten Bereichs.
 KIOSK_DATA_DIR=/var/lib/miniclientcontrol
 
-# ext4-LABEL, das bevorzugt als Datentraeger genommen wird.
+# ext4-LABEL, das bevorzugt genommen wird.
 # Stick vorbereiten mit:  mkfs.ext4 -L KIOSKDATA /dev/sdX1
 KIOSK_DATA_LABEL=KIOSKDATA
 
@@ -13,7 +18,28 @@ KIOSK_DATA_TMPFS_SIZE=512M
 # Wie lange auf USB-Enumeration gewartet wird (Sekunden).
 KIOSK_DATA_WAIT=10
 
-# Zusaetzliche Argumente fuer miniclientcontrol.
-# Falls die Binary den Datenpfad als Flag erwartet, hier eintragen, z.B.
-#   MCC_ARGS=--data-dir /var/lib/miniclientcontrol
-MCC_ARGS=
+# --- miniclientcontrol ---------------------------------------------------
+
+# Jedes CLI-Argument von miniclientcontrol ist als #[arg(long, env)]
+# deklariert, jede Variable hier wirkt also direkt als Flag. Beispiele:
+#
+#   PORT=3000                  entspricht  --port 3000
+#   HTTP_LISTEN=127.0.0.1      entspricht  --http-listen 127.0.0.1
+#   PUBLIC_URL=mdns            entspricht  --public-url mdns
+#   BASIC_AUTH_USER=admin      entspricht  --basic-auth-user admin
+#   DISABLE_CAST=true          entspricht  --disable-cast
+#
+# --assets-dir und --database-path setzt kiosk-session selbst aus
+# KIOSK_DATA_DIR, die hier nicht doppelt eintragen.
+
+# Standard ist 127.0.0.1, das Web-Interface ist dann nur lokal erreichbar.
+# Fuer Fernwartung im LAN auf 0.0.0.0 setzen - dann aber BASIC_AUTH_USER und
+# BASIC_AUTH_PASSWORD dazu, sonst kann jeder im Netz den Kiosk steuern.
+HTTP_LISTEN=127.0.0.1
+
+# Rohe Flags, die keine Env-Variable haben oder wiederholt vorkommen.
+# Mehrere Flags in Quotes, sonst versucht die Shell das zweite Wort als
+# Befehl auszufuehren. Einzelne Argumente duerfen keine Leerzeichen enthalten -
+# solche gehoeren als Env-Variable gesetzt.
+#   MCC_EXTRA_ARGS="--chromium-arg=--force-device-scale-factor=1.25 --no-kiosk"
+MCC_EXTRA_ARGS=""

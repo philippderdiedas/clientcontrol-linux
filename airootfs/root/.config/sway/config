@@ -1,20 +1,18 @@
-# Kiosk-Session: nur Chromium, kein Panel, keine Deko
+# Kiosk-Session. Chromium wird nicht hier gestartet - das macht
+# miniclientcontrol selbst, damit es die CDP-Verbindung kontrolliert.
+
 default_border none
 default_floating_border none
 focus_follows_mouse no
 
-# Chromium laeuft hier als root -> ohne --no-sandbox startet es nicht.
-# --ozone-platform=wayland erzwingt den Wayland-Backend statt X11-Fallback.
-exec chromium \
-  --no-sandbox \
-  --ozone-platform=wayland \
-  --kiosk \
-  --start-fullscreen \
-  --no-first-run \
-  --noerrdialogs \
-  --disable-infobars \
-  --disable-session-crashed-bubble \
-  https://archlinux.org
+# Output-Overrides vom persistenten Datenbereich, z.B. Bildschirmdrehung.
+# Glob statt fester Pfad: matcht nichts, wenn der Ordner leer ist oder kein
+# Stick steckt - das ist dann kein Fehler, sway laeuft normal weiter.
+# Beispielinhalt einer Datei dort:
+#     output * transform 90
+include /var/lib/miniclientcontrol/sway.d/*.conf
+
+exec /usr/local/bin/kiosk-session
 
 # Notausgang. Ein Terminal ist im Image nicht installiert - falls du eins
 # willst, 'foot' in packages.x86_64 aufnehmen und hier binden.

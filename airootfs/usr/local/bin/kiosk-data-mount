@@ -57,6 +57,23 @@ pick_device() {
     done
 }
 
+# Legt die Unterverzeichnisse an, die sway und miniclientcontrol erwarten,
+# und einen Hinweis fuer den, der den Stick spaeter in der Hand hat.
+prepare_layout() {
+    mkdir -p -- "${TARGET}/sway.d" "${TARGET}/assets"
+    [[ -e "${TARGET}/sway.d/rotate.conf.example" ]] && return 0
+    cat >"${TARGET}/sway.d/rotate.conf.example" <<'HINT' || true
+# Jede *.conf in diesem Ordner wird von sway eingelesen (diese Datei nicht,
+# sie endet auf .example). Fuer eine gedrehte Anzeige z.B. als 90.conf:
+#
+#   output * transform 90
+#
+# Werte: normal, 90, 180, 270, flipped, flipped-90, flipped-180, flipped-270
+# Einzelnen Ausgang statt aller: "output HDMI-A-1 transform 270"
+# Namen der Ausgaenge zeigt: swaymsg -t get_outputs
+HINT
+}
+
 mkdir -p -- "${TARGET}"
 
 if mountpoint -q -- "${TARGET}"; then
@@ -75,6 +92,7 @@ if device="$(pick_device)"; then
     if mount -t ext4 -o rw,noatime,nodev,nosuid -- "${device}" "${TARGET}"; then
         log "${device} auf ${TARGET} gemountet, Daten sind persistent"
         printf 'usb %s\n' "${device}" >"${SOURCE_MARKER}"
+        prepare_layout
         exit 0
     fi
     log "WARNUNG: mount von ${device} fehlgeschlagen, fange auf tmpfs zurueck"
@@ -86,3 +104,4 @@ mount -t tmpfs -o "rw,nosuid,nodev,mode=0755,size=${TMPFS_SIZE}" \
     kiosk-data "${TARGET}"
 log "${TARGET} als tmpfs (${TMPFS_SIZE}) gemountet, Daten sind FLUECHTIG"
 printf 'tmpfs\n' >"${SOURCE_MARKER}"
+prepare_layout
