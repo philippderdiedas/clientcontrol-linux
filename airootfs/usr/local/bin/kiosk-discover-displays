@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Liest die Ausgabe von "swaymsg -t get_outputs" (JSON) von stdin und gibt die
+# aktiven Connector-Namen aus, einen pro Zeile - aber nur, wenn mindestens zwei
+# aktiv sind. Bei 0 oder 1 aktivem Output bleibt die Ausgabe leer: das ist das
+# Signal fuer den Legacy-Ein-Monitor-Pfad in kiosk-session, wo miniclientcontrol
+# ohne --display startet und alles bleibt wie heute.
+#
+# Connector-Namen (HDMI-A-1, eDP-1, DP-1) sind zugleich die Display-Namen fuer
+# miniclientcontrol. Sie sind alphanumerisch plus '-', also ohne Sanitizing
+# gueltig.
+set -euo pipefail
+
+active="$(jq -r '.[] | select(.active) | .name')"
+
+# Nicht-leere Zeilen zaehlen. Bei leerer Eingabe ist $active leer -> 0.
+if [[ -z "${active}" ]]; then
+    exit 0
+fi
+count="$(grep -c . <<<"${active}")"
+if (( count >= 2 )); then
+    printf '%s\n' "${active}"
+fi
+exit 0

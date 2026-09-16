@@ -23,6 +23,8 @@ file_permissions=(
   ["/usr/local/bin/Installation_guide"]="0:0:755"
   ["/usr/local/bin/livecd-sound"]="0:0:755"
   ["/usr/local/bin/kiosk-data-mount"]="0:0:755"
+  ["/usr/local/bin/kiosk-discover-displays"]="0:0:755"
   ["/usr/local/bin/kiosk-session"]="0:0:755"
   ["/usr/local/bin/miniclientcontrol"]="0:0:755"
+  ["/usr/local/share/kiosk/blank.html"]="0:0:644"
 )
