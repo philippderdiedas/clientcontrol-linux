@@ -278,10 +278,21 @@ git commit -m "kiosk-session: Multi-Display-Discovery vor miniclientcontrol-Star
 **Interfaces:**
 - Consumes: die gebauten Änderungen aus Task 1–3.
 
-- [ ] **Step 1: Image bauen (Rust überspringen, nur Image-Glue geändert)**
+- [ ] **Step 1: Image bauen — VOLLER Build (Rust neu), nicht SKIP_RUST**
 
-Run: `sudo SKIP_RUST=1 ./build.sh`
-Expected: Build endet mit „Fertig. Ergebnis in out/", `jq` ist im Paketstand.
+Die gebündelte `airootfs/usr/local/bin/miniclientcontrol` ist älter als der
+Multi-Display-Commit (`d2165a0`) und kennt `--display` nicht. `SKIP_RUST=1`
+würde die alte Binary behalten und mc bräche bei zwei Monitoren am unbekannten
+Flag ab. Also die Binary neu bauen (Submodule steht auf `d2165a0`):
+
+Run: `sudo ./build.sh`
+Expected: `cargo build --release` läuft durch, neue Binary landet in
+`airootfs/usr/local/bin/miniclientcontrol`, Build endet mit „Fertig. Ergebnis in
+out/", `jq` ist im Paketstand.
+
+Danach verifizieren, dass die frische Binary `--display` kennt:
+Run: `airootfs/usr/local/bin/miniclientcontrol --help 2>&1 | grep -- --display`
+Expected: eine Trefferzeile für die `--display`-Option.
 
 - [ ] **Step 2: Deployen**
 
