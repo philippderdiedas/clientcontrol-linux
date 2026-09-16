@@ -46,6 +46,28 @@ if [[ -n "${MCC_EXTRA_ARGS:-}" ]]; then
     log "zusaetzliche Flags: ${extra[*]}"
 fi
 
+# --- Multi-Display-Discovery --------------------------------------------
+# sway ist hier schon oben (kiosk-session laeuft aus der sway-Config per exec),
+# also kennt es seine Outputs. kiosk-discover-displays gibt die aktiven Connector
+# aus, aber nur ab zwei Monitoren - bei einem bleibt die Liste leer und
+# miniclientcontrol startet ohne --display, exakt wie bisher (Legacy).
+#
+# Pro Connector wird VOR dem Start eine Platzierungsregel gesetzt: das Fenster
+# mit app_id "miniclientcontrol-<connector>" (den app_id leitet miniclientcontrol
+# aus dem Display-Namen ab) wandert auf genau diesen Output. Die Regel muss
+# stehen, bevor miniclientcontrol das Fenster oeffnet, sonst erscheint es kurz
+# auf dem falschen Monitor.
+display_flags=()
+mapfile -t kiosk_displays < <(swaymsg -t get_outputs | kiosk-discover-displays)
+for out in "${kiosk_displays[@]}"; do
+    display_flags+=(--display "${out}")
+    swaymsg "for_window [app_id=\"miniclientcontrol-${out}\"] move container to output ${out}"
+    log "Display ${out} deklariert und auf Output ${out} gebunden"
+done
+if (( ${#display_flags[@]} == 0 )); then
+    log "ein Monitor oder keiner - Legacy-Start ohne --display"
+fi
+
 # --no-sandbox: Chromium laeuft hier als root und verweigert sonst den Start.
 # --ozone-platform=wayland: sonst faellt es auf X11 zurueck, das es nicht gibt.
 # miniclientcontrol startet Chromium selbst (siehe --no-launch-browser in
@@ -55,4 +77,5 @@ exec /usr/local/bin/miniclientcontrol \
     --database-path "${DATA}/miniclient.db" \
     --chromium-arg=--no-sandbox \
     --chromium-arg=--ozone-platform=wayland \
+    "${display_flags[@]}" \
     "${extra[@]}"
