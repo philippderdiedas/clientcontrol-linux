@@ -57,21 +57,33 @@ fi
 # aus dem Display-Namen ab) wandert auf genau diesen Output. Die Regel muss
 # stehen, bevor miniclientcontrol das Fenster oeffnet, sonst erscheint es kurz
 # auf dem falschen Monitor.
-#
-# "fullscreen enable" zusaetzlich, weil Chromiums --kiosk-Fullscreen und das
-# move-to-output um die Reihenfolge rennen: gemessen landete mal ein Fenster
-# fullscreen (fs=1), das andere nur formatfuellend (fs=0) - nicht deterministisch.
-# "fullscreen enable" ist idempotent und macht beide Fenster sicher fullscreen,
-# damit kein Overlay oder keine Infobar auf einem Monitor durchkommt.
 display_flags=()
 mapfile -t kiosk_displays < <(swaymsg -t get_outputs | kiosk-discover-displays)
 for out in "${kiosk_displays[@]}"; do
     display_flags+=(--display "${out}")
-    swaymsg "for_window [app_id=\"miniclientcontrol-${out}\"] move container to output ${out}, fullscreen enable"
+    swaymsg "for_window [app_id=\"miniclientcontrol-${out}\"] move container to output ${out}"
     log "Display ${out} deklariert und auf Output ${out} gebunden"
 done
 if (( ${#display_flags[@]} == 0 )); then
     log "ein Monitor oder keiner - Legacy-Start ohne --display"
+fi
+
+# Fullscreen NICHT in der for_window-Regel: die greift beim Mappen des Fensters,
+# aber Chromiums --kiosk setzt seinen eigenen Fullscreen teils erst danach und
+# ueberschreibt sie - gemessen blieb dann ein Fenster fs=0, das andere fs=1,
+# nicht deterministisch. Stattdessen nach dem Start wiederholt durchsetzen:
+# ein Hintergrundprozess (Fork VOR dem exec, ueberlebt es also) setzt ueber die
+# ersten ~15s mehrfach "fullscreen enable". Idempotent, und der letzte Durchlauf
+# liegt sicher nach Chromiums Fullscreen-Request, egal wie das Race ausgeht.
+if (( ${#display_flags[@]} >= 2 )); then
+    (
+        for _ in 1 2 3 4 5 6; do
+            sleep 3
+            for out in "${kiosk_displays[@]}"; do
+                swaymsg "[app_id=\"miniclientcontrol-${out}\"] fullscreen enable" >/dev/null 2>&1 || true
+            done
+        done
+    ) &
 fi
 
 # --no-sandbox: Chromium laeuft hier als root und verweigert sonst den Start.
