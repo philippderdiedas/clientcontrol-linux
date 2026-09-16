@@ -35,3 +35,8 @@ chromium
 xdg-utils
 ttf-dejavu
 ttf-liberation
+
+# --- Kiosk-Werkzeuge (Laufzeit) ---
+# jq: kiosk-session parst damit die JSON-Ausgabe von "swaymsg -t get_outputs"
+# fuer die Multi-Display-Discovery.
+jq
