@@ -38,6 +38,19 @@ set +a
 
 mkdir -p -- "${DATA}/assets"
 
+# Backlight auf volle Helligkeit. Ein Kiosk soll hell leuchten, aber manche
+# Panels booten gedimmt. Fuer jedes Backlight im sysfs die maximale Helligkeit
+# setzen (max_brightness -> brightness). Kein Backlight (externer Monitor ohne
+# steuerbares Backlight) -> der Glob matcht nichts und die Schleife laeuft leer.
+for bl in /sys/class/backlight/*; do
+    [[ -f "${bl}/max_brightness" && -w "${bl}/brightness" ]] || continue
+    if cat "${bl}/max_brightness" > "${bl}/brightness" 2>/dev/null; then
+        log "Backlight $(basename "${bl}") auf max gesetzt"
+    else
+        log "WARNUNG: Backlight $(basename "${bl}") liess sich nicht setzen"
+    fi
+done
+
 # Rohe Flags aus MCC_EXTRA_ARGS. Wortweise getrennt, keine Quotes innerhalb -
 # Argumente mit Leerzeichen gehoeren als Env-Variable gesetzt, nicht hierher.
 extra=()
