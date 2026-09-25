@@ -24,14 +24,24 @@ jobs:
     env:
       CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
-      # Der automatische Job-Token darf nur dieses Repo. Das Submodule
-      # miniclientcontrol liegt in einem anderen (privaten) Repo, darum ein
-      # Access-Token mit Leserecht darauf (Secret SUBMODULE_TOKEN). checkout
-      # nutzt ihn auch fuer die Submodule-Clones auf demselben Host.
+      # Hauptrepo mit dem automatischen Job-Token. Submodule NICHT hier, weil
+      # der Token nur dieses Repo darf - miniclientcontrol liegt in einem
+      # anderen (privaten) Repo.
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.SUBMODULE_TOKEN }}
+
+      # Submodule miniclientcontrol ueber einen read-only Deploy-Key holen
+      # (Secret SUBMODULE_SSH_KEY; oeffentlicher Teil liegt als Deploy-Key im
+      # miniclientcontrol-Repo). .gitmodules zeigt dafuer auf die ssh-URL.
+      - name: fetch submodule (deploy key)
+        env:
+          SUBMODULE_SSH_KEY: ${{ secrets.SUBMODULE_SSH_KEY }}
+        run: |
+          key="$RUNNER_TEMP/submodule_key"
+          install -m600 /dev/null "$key"
+          printf '%s\n' "$SUBMODULE_SSH_KEY" > "$key"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git submodule sync --recursive
+          git submodule update --init --recursive --depth 1
 
       - name: cache cargo
         uses: actions/cache@v4
