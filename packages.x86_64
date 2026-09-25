@@ -13,6 +13,7 @@ openssh
 mkinitcpio
 mkinitcpio-archiso
 mkinitcpio-nfs-utils
+nbd                 # nbd-client fuer den archiso_pxe_nbd-Hook (HOOKS in mkinitcpio.conf.d/archiso.conf)
 
 # --- Bootloader (für ISO-Build selbst, syslinux-Bootmode in profiledef.sh) ---
 syslinux
