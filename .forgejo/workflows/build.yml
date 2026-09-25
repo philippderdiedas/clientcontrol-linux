@@ -19,8 +19,6 @@ on:
 jobs:
   image:
     runs-on: archiso
-    permissions:
-      contents: write        # Release-Assets mit dem automatischen Token anhaengen
     env:
       CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
