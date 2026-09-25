@@ -5,7 +5,8 @@
 #   2. mkarchiso laufen lassen
 #
 # Schritt 2 braucht root (pacstrap mountet /proc, /sys, /dev in den Chroot).
-# Deshalb laeuft das NICHT in kaniko - siehe .gitlab-ci.yml.
+# Deshalb laeuft der Build auf einem host-Runner als root, nicht im Container -
+# siehe .forgejo/workflows/build.yml.
 #
 # Umgebung:
 #   BUILDMODE   netboot (Standard) | iso

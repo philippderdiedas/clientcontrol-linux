@@ -1,0 +1,60 @@
+# Baut das Kiosk-Netboot-Image und haengt die Boot-Dateien bei einem Tag als
+# Release-Assets an. Ein 3rd-party-Dienst zieht sie von dort.
+#
+# Laeuft auf einem selbst gehosteten act_runner mit dem Label `archiso`, der als
+# root im host-Executor arbeitet (mkarchiso braucht root und mountet
+# /proc, /sys, /dev - das geht nicht im Container). Der Runner braucht:
+#   mkarchiso, arch-install-scripts, cargo/rust, git, curl, jq.
+#
+# Voraussetzung fuer den recursive Checkout: das Submodule miniclientcontrol
+# liegt auf DERSELBEN Forgejo-Instanz wie dieses Repo, dann reicht der
+# automatische Job-Token. (git submodule set-url + .gitmodules anpassen.)
+
+name: build
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+jobs:
+  image:
+    runs-on: archiso
+    env:
+      CARGO_HOME: ${{ github.workspace }}/.cargo
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: cache cargo
+        uses: actions/cache@v4
+        with:
+          key: cargo-${{ hashFiles('miniclientcontrol/Cargo.lock') }}
+          restore-keys: cargo-
+          path: |
+            .cargo/registry
+            miniclientcontrol/target
+
+      - name: build netboot image
+        run: ./build.sh
+        env:
+          BUILDMODE: netboot
+
+      - name: upload workflow artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: kiosk-netboot
+          path: |
+            out/arch/boot/x86_64/vmlinuz-linux
+            out/arch/boot/x86_64/initramfs-linux.img
+            out/arch/x86_64/airootfs.sfs
+            out/arch/x86_64/airootfs.sha512
+
+      - name: publish release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        run: ./ci/release.sh
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
