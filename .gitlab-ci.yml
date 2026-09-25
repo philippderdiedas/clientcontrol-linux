@@ -1,0 +1,72 @@
+# Baut das Kiosk-Netboot-Image und schiebt es in den netbootxyz-Pod.
+#
+# Laeuft auf einem dedizierten shell-Runner (mkarchiso braucht root und mountet
+# /proc, /sys, /dev - das geht nicht in einem Container-Executor). Der Runner
+# muss deshalb:
+#   - mit dem Tag `archiso` versehen sein (siehe `tags:` unten),
+#   - "Run untagged jobs" AUS und "Protected" AN haben (Runner-Settings in der
+#     GitLab-UI), damit Forks/MRs den Runner nicht erreichen,
+#   - Jobs als root ausfuehren (systemd-Override entfernt --user gitlab-runner),
+#   - mkarchiso, arch-install-scripts, cargo/rust und git installiert haben.
+#
+# Das Submodule miniclientcontrol haengt an ssh://git@git.supercookie.de - eine
+# andere Instanz als diese CI. Der Runner braucht dorthin SSH-Zugriff
+# (Deploy-Key als bekannter Host + Key), sonst schlaegt der recursive Checkout
+# fehl.
+
+stages:
+  - build
+  - deploy
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+  GIT_SUBMODULE_DEPTH: "1"
+  # Cargo-Cache im Projektverzeichnis, damit `cache:` ihn erfasst.
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+
+# Nur auf geschuetzten Branches/Tags bauen. Zusammen mit einem protected Runner
+# ist das die zweite Haelfte der Absicherung fuer ein oeffentliches Repo:
+# fremder MR-Code laeuft nie als root auf dem Build-Host.
+.protected_only: &protected_only
+  rules:
+    - if: '$CI_COMMIT_REF_PROTECTED == "true"'
+
+build-image:
+  stage: build
+  tags: [archiso]
+  <<: *protected_only
+  variables:
+    BUILDMODE: netboot
+  cache:
+    key: cargo
+    paths:
+      - .cargo/registry/
+      - miniclientcontrol/target/
+  script:
+    - ./build.sh
+  artifacts:
+    name: "kiosk-netboot-$CI_COMMIT_SHORT_SHA"
+    expire_in: 1 week
+    paths:
+      - out/arch/boot/x86_64/vmlinuz-linux
+      - out/arch/boot/x86_64/initramfs-linux.img
+      - out/arch/x86_64/airootfs.sfs
+      - out/arch/x86_64/airootfs.sha512
+  timeout: 1h
+
+# Schiebt die gebauten Artefakte in den netbootxyz-Pod. Manuell, damit ein Build
+# nicht automatisch die Produktion aktualisiert.
+#
+# Braucht auf dem Runner `kubectl` und diese CI/CD-Variablen (protected):
+#   KUBECONFIG      File-Variable mit dem Cluster-Zugang
+#   KUBE_NAMESPACE  (optional) Standard: netbootxyz
+#   ASSET_DIR       (optional) Standard: /assets/arch-kiosk
+deploy-netboot:
+  stage: deploy
+  tags: [archiso]
+  needs: [build-image]
+  rules:
+    - if: '$CI_COMMIT_REF_PROTECTED == "true"'
+      when: manual
+  script:
+    - ./deploy.sh
