@@ -18,6 +18,11 @@ KIOSK_DATA_TMPFS_SIZE=512M
 # Wie lange auf USB-Enumeration gewartet wird (Sekunden).
 KIOSK_DATA_WAIT=10
 
+# Datei auf dem Datentraeger, die beim Boot nach /root/.ssh/authorized_keys
+# kopiert wird (Pfad relativ zu KIOSK_DATA_DIR). Fehlt sie oder ist sie leer,
+# gibt es keinen SSH-Zugang: das Image hat weder Passwort noch Key.
+KIOSK_DATA_SSH_KEYS=ssh/authorized_keys
+
 # --- miniclientcontrol ---------------------------------------------------
 
 # Jedes CLI-Argument von miniclientcontrol ist als #[arg(long, env)]
@@ -37,9 +42,41 @@ KIOSK_DATA_WAIT=10
 # BASIC_AUTH_PASSWORD dazu, sonst kann jeder im Netz den Kiosk steuern.
 HTTP_LISTEN=127.0.0.1
 
+# Weitere Schalter, jeder als #[arg(long, env)] -> Env-Variable = Flag:
+#
+#   GUEST_PAGES=on             Gaeste duerfen eine Webseite auf den Schirm legen
+#                              (statt zu casten). Standard: off.
+#   MANAGED_CERT=off           kein echtes <lan-ip>.clientctrl.cc-Zertifikat holen
+#                              (Standard auto; braucht Netz + avahi fuer den .local-Namen).
+#   PUBLIC_URL=mdns            wie Gaeste das Geraet erreichen; mdns veroeffentlicht
+#                              einen .local-Namen via avahi-publish.
+#   FREEZE_TIMEOUT=60          Sekunden ohne Bildaufbau, bis ein Schirm als
+#                              eingefroren gilt (Browser-Neustart + display.frozen).
+#   ADVANCE_STALL_TIMEOUT=120  Sekunden, die ein "Durchlaeufe"-Item ohne Fortschritt
+#                              haengen darf, bevor die Schleife weiterschaltet.
+#   CAST_AUTH=code CAST_CODE=AB12   fester Code fuers Casten.
+# Casting bindet ausserdem einen HTTPS-Listener (bevorzugt 443, sonst 3443);
+# als root im Kiosk ist Port 443 ohne setcap erlaubt.
+
 # Rohe Flags, die keine Env-Variable haben oder wiederholt vorkommen.
 # Mehrere Flags in Quotes, sonst versucht die Shell das zweite Wort als
 # Befehl auszufuehren. Einzelne Argumente duerfen keine Leerzeichen enthalten -
 # solche gehoeren als Env-Variable gesetzt.
 #   MCC_EXTRA_ARGS="--chromium-arg=--force-device-scale-factor=1.25 --no-kiosk"
 MCC_EXTRA_ARGS=""
+
+# Chromium laeuft standardmaessig mit --kiosk: Fullscreen und keine
+# Bedienleisten. Soll das Bild kleiner sein als das Panel - Scheibe oder Blende
+# davor -, geht das nicht: einen Fullscreen kann sway nicht verkleinern, und
+# ohne Fullscreen zeigt Chromium Tab- und Adressleiste. Dann stattdessen den
+# App-Modus nehmen, ein Fenster ohne jede Leiste, das sway frei setzen kann:
+#
+#   NO_KIOSK=true
+#   MCC_EXTRA_ARGS="--chromium-arg=--app=file:///usr/local/share/kiosk/blank.html --chromium-arg=--test-type"
+#
+# --app braucht eine echte URL, mit about:blank ignoriert Chromium den Modus.
+# --test-type unterdrueckt die Infobar zu --no-sandbox, die ausserhalb des
+# Kiosk-Modus sichtbar wird und sich ohne Maus nicht wegklicken laesst.
+# Die Groesse setzt eine sway-Regel, siehe sway.d/inset.conf.example auf dem
+# Datentraeger. Beides gehoert dorthin, nicht hier ins Image: die Werte haengen
+# am einzelnen Geraet.

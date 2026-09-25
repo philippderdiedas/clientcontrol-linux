@@ -29,12 +29,20 @@ pipewire
 pipewire-pulse
 pipewire-alsa
 wireplumber
+# libpulse liefert `pactl`, mit dem miniclientcontrol (src/audio.rs) die
+# Raum-Audio-Senken steuert. pipewire-pulse ist nur der Server, nicht der Client.
+libpulse
 
 # --- Webbrowser & Schriften ---
 chromium
 xdg-utils
 ttf-dejavu
 ttf-liberation
+
+# --- mDNS / Zeroconf (fuer --public-url mdns und --managed-cert) ---
+# avahi-publish veroeffentlicht den .local-Namen; der avahi-daemon wird per
+# multi-user.target.wants aktiviert. Ohne faellt managed-cert weich zurueck.
+avahi
 
 # --- Kiosk-Werkzeuge (Laufzeit) ---
 # jq: kiosk-session parst damit die JSON-Ausgabe von "swaymsg -t get_outputs"
