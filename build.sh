@@ -60,6 +60,17 @@ fi
 [[ "${EUID}" -eq 0 ]] || die "mkarchiso braucht root. Mit sudo aufrufen."
 
 msg "mkarchiso -m ${BUILDMODE}"
+# Ein hart abgebrochener mkarchiso (Job cancelled, OOM-kill) laesst die
+# pacstrap-Mounts (/proc, /sys, /dev, ...) im work/-Baum stehen. Dann scheitert
+# rm -rf mit "Operation not permitted" und jeder Folge-Build haengt. Erst die
+# Leftover-Mounts loesen, tiefste zuerst.
+if [[ -d "${WORK_DIR}" ]]; then
+    wd="$(readlink -f -- "${WORK_DIR}")"
+    mount | awk -v w="${wd}/" 'index($3, w) == 1 {print $3}' \
+        | sort -r | while read -r mp; do
+        umount "${mp}" 2>/dev/null || umount -l "${mp}" 2>/dev/null || true
+    done
+fi
 rm -rf -- "${WORK_DIR}" "${OUT_DIR}"
 mkarchiso -v -m "${BUILDMODE}" -w "${WORK_DIR}" -o "${OUT_DIR}" .
 
