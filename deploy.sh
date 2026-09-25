@@ -31,16 +31,22 @@ for f in "$kern" "$init" "$sfs" "$sha"; do
     [ -f "$f" ] || { echo "Artefakt fehlt: $f" >&2; exit 1; }
 done
 
+echo "Erstelle verzeichnisse im pod (falls missing)"
 kubectl -n "$NS" exec "$POD" -- mkdir -p "$ASSETS/x86_64"
 
 # Erst neben das Ziel legen, dann umbenennen. Ein halb uebertragenes initrd
 # waere ein nicht bootender Kiosk.
+echo "Kopiere vmlinuz"
 kubectl -n "$NS" cp "$kern" "$POD:$ASSETS/vmlinuz.new"
+echo "Kopiere initrd"
 kubectl -n "$NS" cp "$init" "$POD:$ASSETS/initrd.new"
+echo "Kopiere airootfs.sfs"
 kubectl -n "$NS" cp "$sfs"  "$POD:$ASSETS/x86_64/airootfs.sfs.new"
+echo "Kopiere airootfs.sha512"
 kubectl -n "$NS" cp "$sha"  "$POD:$ASSETS/x86_64/airootfs.sha512.new"
 
 # Pruefsummen vergleichen, bevor irgendwas aktiv wird.
+echo "Prüfe checksums"
 for pair in "vmlinuz.new:$kern" "initrd.new:$init" "x86_64/airootfs.sfs.new:$sfs" "x86_64/airootfs.sha512.new:$sha"; do
     remote="${pair%%:*}"; local_file="${pair#*:}"
     want="$(sha256sum "$local_file" | cut -d' ' -f1)"
@@ -55,6 +61,7 @@ done
 
 # Atomar aktivieren und Ownership setzen - dnsmasq laeuft mit --tftp-secure
 # und liefert nur Dateien des nbxyz-Users aus.
+echo "Aktiviere dateien (mv)"
 kubectl -n "$NS" exec "$POD" -- sh -c "
 set -e
 cd '$ASSETS'

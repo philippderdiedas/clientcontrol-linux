@@ -10,6 +10,11 @@ ConditionPathExists=/usr/local/bin/kiosk-data-mount
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# Type=oneshot erbt KEIN DefaultTimeoutStartSec, der Default ist "infinity".
+# Das Skript deckelt sich selbst (Suchlauf 15s, fsck 60s, mount 30s), das
+# hier ist nur die Reissleine fuer den Fall, dass etwas im Kernel klemmt und
+# sich nicht mehr abbrechen laesst - sonst haengt der Boot ewig.
+TimeoutStartSec=150
 ExecStart=/usr/local/bin/kiosk-data-mount
 # Beim Stoppen nicht unmounten - der Kiosk faehrt sowieso runter, und ein
 # umount waehrend miniclientcontrol noch in die SQLite-DB schreibt waere

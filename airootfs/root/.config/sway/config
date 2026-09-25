@@ -5,11 +5,19 @@ default_border none
 default_floating_border none
 focus_follows_mouse no
 
+# Der Bereich, den kein Fenster belegt, ist sonst der sway-Default-Hintergrund.
+# Schwarz, damit unter einer Blende oder Scheibe nichts leuchtet.
+output * bg #000000 solid_color
+
 # Output-Overrides vom persistenten Datenbereich, z.B. Bildschirmdrehung.
 # Glob statt fester Pfad: matcht nichts, wenn der Ordner leer ist oder kein
 # Stick steckt - das ist dann kein Fehler, sway laeuft normal weiter.
 # Beispielinhalt einer Datei dort:
 #     output * transform 90
+#     for_window [app_id="^chrome-"] floating enable, border none, resize set 100 ppt 85 ppt, move position 0 ppt 10 ppt
+# Das zweite Beispiel haelt das Bild kleiner als das Panel, wenn eine Scheibe
+# davor sitzt. Das braucht zusaetzlich den App-Modus in miniclientcontrol.env;
+# Details stehen in sway.d/inset.conf.example auf dem Stick.
 include /var/lib/miniclientcontrol/sway.d/*.conf
 
 exec /usr/local/bin/kiosk-session

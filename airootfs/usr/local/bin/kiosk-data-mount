@@ -7,6 +7,11 @@
 #   3. sonst tmpfs (Daten sind dann fluechtig)
 #
 # Konfiguration ueber /etc/default/miniclientcontrol.
+#
+# Der Suchlauf laeuft in einem eigenen Prozess (--probe), den ein timeout
+# samt Kindern abraeumt. Ein Geraet, das beim Probing im Kernel haengt
+# (Cardreader ohne Medium, sterbende Platte), kann den Boot damit nicht mehr
+# blockieren: nach dem Zeitfenster geht es garantiert im tmpfs-Zweig weiter.
 
 set -euo pipefail
 
@@ -17,6 +22,11 @@ TARGET="${KIOSK_DATA_DIR:-/var/lib/miniclientcontrol}"
 LABEL="${KIOSK_DATA_LABEL:-KIOSKDATA}"
 TMPFS_SIZE="${KIOSK_DATA_TMPFS_SIZE:-512M}"
 WAIT_SECS="${KIOSK_DATA_WAIT:-10}"
+SSH_KEYS_REL="${KIOSK_DATA_SSH_KEYS:-ssh/authorized_keys}"
+TZ_REL="${KIOSK_DATA_TIMEZONE_FILE:-timezone}"
+# Reserve, damit der Suchlauf sein eigenes Zeitfenster normal beenden kann;
+# erst danach greift der harte Kill von aussen.
+PROBE_TIMEOUT=$(( WAIT_SECS + 5 ))
 SOURCE_MARKER=/run/kiosk-data.source
 
 log() { printf 'kiosk-data: %s\n' "$*"; }
@@ -27,13 +37,17 @@ usb_ext4_candidates() {
     local dev bus label
     for dev in /dev/sd*[0-9] /dev/mmcblk*p[0-9]* /dev/nvme*n*p[0-9]*; do
         [[ -b "${dev}" ]] || continue
-        [[ "$(blkid -o value -s TYPE "${dev}" 2>/dev/null)" == ext4 ]] || continue
+        # Jeder Aufruf einzeln gedeckelt: ein blockierendes Geraet kostet
+        # so ein paar Sekunden und nicht das ganze Zeitfenster. Das "|| true"
+        # ist Pflicht - unter "set -e" mit "pipefail" wuerde ein Exit != 0
+        # aus der Substitution die Funktion stumm abbrechen.
+        [[ "$(timeout 3 blkid -o value -s TYPE "${dev}" 2>/dev/null || true)" == ext4 ]] || continue
         # Bereits gemountet? Nicht anfassen.
-        findmnt -rno TARGET --source "${dev}" >/dev/null 2>&1 && continue
-        bus="$(udevadm info --query=property --name="${dev}" 2>/dev/null |
-               sed -n 's/^ID_BUS=//p')"
+        timeout 3 findmnt -rno TARGET --source "${dev}" >/dev/null 2>&1 && continue
+        bus="$(timeout 3 udevadm info --query=property --name="${dev}" 2>/dev/null |
+               sed -n 's/^ID_BUS=//p' || true)"
         [[ "${bus}" == usb ]] || continue
-        label="$(blkid -o value -s LABEL "${dev}" 2>/dev/null || true)"
+        label="$(timeout 3 blkid -o value -s LABEL "${dev}" 2>/dev/null || true)"
         printf '%s %s\n' "${dev}" "${label}"
     done
 }
@@ -41,16 +55,19 @@ usb_ext4_candidates() {
 # USB-Enumeration braucht nach dem Boot einen Moment. Warten, bis ein
 # Kandidat auftaucht oder das Zeitfenster ablaeuft.
 pick_device() {
-    local deadline=$((SECONDS + WAIT_SECS)) dev label
+    local deadline=$((SECONDS + WAIT_SECS)) dev label first=""
     while :; do
-        # Erst der bevorzugte Label, dann irgendein ext4-USB-Geraet.
+        # Ein Durchlauf liefert beides: den bevorzugten Label sofort, sonst
+        # das erste ext4-USB-Geraet als Rueckfallposition.
+        first=""
         while read -r dev label; do
             [[ "${label}" == "${LABEL}" ]] && { printf '%s' "${dev}"; return 0; }
+            [[ -z "${first}" ]] && first="${dev}"
+            # Auch mitten in der Geraeteliste abbrechen, wenn die Zeit um ist.
+            (( SECONDS >= deadline )) && break
         done < <(usb_ext4_candidates)
 
-        dev=""
-        read -r dev label < <(usb_ext4_candidates) || true
-        [[ -n "${dev}" ]] && { printf '%s' "${dev}"; return 0; }
+        [[ -n "${first}" ]] && { printf '%s' "${first}"; return 0; }
 
         (( SECONDS >= deadline )) && return 1
         sleep 1
@@ -60,8 +77,33 @@ pick_device() {
 # Legt die Unterverzeichnisse an, die sway und miniclientcontrol erwarten,
 # und einen Hinweis fuer den, der den Stick spaeter in der Hand hat.
 prepare_layout() {
-    mkdir -p -- "${TARGET}/sway.d" "${TARGET}/assets"
-    [[ -e "${TARGET}/sway.d/rotate.conf.example" ]] && return 0
+    mkdir -p -- "${TARGET}/sway.d" "${TARGET}/assets" "${TARGET}/ssh"
+    [[ -e "${TARGET}/timezone.example" ]] || \
+    cat >"${TARGET}/timezone.example" <<'HINT' || true
+# Diese Datei ohne ".example" umbenennen (also nur "timezone"), um die Zeitzone
+# systemweit zu setzen - ueberschreibt den Image-Default Europe/Berlin. Wirkt
+# auf System, Journal-Logs UND den Browser.
+#
+# Eine Zeile, ein IANA-Zonenname:
+#
+#   Europe/Vienna
+#
+# Gueltige Namen listet:  ls /usr/share/zoneinfo   (z.B. Europe/Zurich)
+# Greift beim naechsten Boot.
+HINT
+    [[ -e "${TARGET}/ssh/authorized_keys.example" ]] || \
+    cat >"${TARGET}/ssh/authorized_keys.example" <<'HINT' || true
+# Diese Datei ohne ".example" umbenennen, dann wird sie beim Boot nach
+# /root/.ssh/authorized_keys kopiert und root-Login per SSH ist moeglich.
+# Ohne Stick (tmpfs-Fallback) gibt es keinen SSH-Zugang: das Image selbst
+# hat weder Passwort noch Key hinterlegt.
+#
+# Pro Zeile ein oeffentlicher Schluessel, z.B. der Inhalt von
+# ~/.ssh/id_ed25519.pub:
+#
+#   ssh-ed25519 AAAAC3Nza... admin@werkstatt
+HINT
+    [[ -e "${TARGET}/sway.d/rotate.conf.example" ]] || \
     cat >"${TARGET}/sway.d/rotate.conf.example" <<'HINT' || true
 # Jede *.conf in diesem Ordner wird von sway eingelesen (diese Datei nicht,
 # sie endet auf .example). Fuer eine gedrehte Anzeige z.B. als 90.conf:
@@ -72,7 +114,107 @@ prepare_layout() {
 # Einzelnen Ausgang statt aller: "output HDMI-A-1 transform 270"
 # Namen der Ausgaenge zeigt: swaymsg -t get_outputs
 HINT
+    [[ -e "${TARGET}/sway.d/inset.conf.example" ]] || \
+    cat >"${TARGET}/sway.d/inset.conf.example" <<'HINT' || true
+# Sitzt eine Scheibe oder Blende vor dem Panel, die kleiner ist als der
+# Bildschirm, dann soll das Bild nicht bis in die verdeckten Raender laufen.
+# Diese Datei dafuer ohne ".example" umbenennen, z.B. als 50-inset.conf.
+#
+# Dazu gehoeren ZWEI Aenderungen, eine hier und eine in
+# ../miniclientcontrol.env - die Regel hier allein reicht nicht:
+#
+# 1. In ../miniclientcontrol.env den App-Modus einschalten:
+#
+#      NO_KIOSK=true
+#      MCC_EXTRA_ARGS="--chromium-arg=--app=file:///usr/local/share/kiosk/blank.html --chromium-arg=--test-type"
+#
+#    --kiosk ist bei Chromium beides in einem: Fullscreen UND keine
+#    Bedienleisten. Einen Fullscreen kann sway nicht kleiner machen, und
+#    schaltet man ihn ab, faellt Chromium in ein normales Fenster mit Tab- und
+#    Adressleiste zurueck. Der App-Modus gibt ein Fenster ohne jede Leiste, das
+#    sway frei setzen kann. --app braucht eine echte URL, mit about:blank
+#    ignoriert Chromium den Modus - daher die schwarze Seite aus dem Image.
+#
+#    --test-type unterdrueckt die gelbe Infobar "You are using an unsupported
+#    command flag: --no-sandbox". Chromium laeuft hier als root und startet
+#    ohne --no-sandbox nicht; im Kiosk-Modus war die Leiste nur unsichtbar.
+#
+# 2. Hier die Geometrie. Im App-Modus ignoriert Chromium --class, die app_id
+#    heisst dann "chrome-<url>-Default":
+#
+#      for_window [app_id="^chrome-"] floating enable, border none, resize set 100 ppt 85 ppt, move position 0 ppt 10 ppt
+#
+#    Das ist eine einzige Zeile, nicht umbrechen.
+#
+# ppt ist Prozent der logischen Bildschirmflaeche, also nach einem "transform"
+# aus einer anderen Datei in diesem Ordner gerechnet. Bei logisch 1080x1920
+# ergibt das Beispiel 1080x1632 an Position 0,192: volle Breite, 10% Rand oben,
+# 5% unten. resize-Hoehe plus move-y muessen 100 minus dem gewuenschten unteren
+# Rand ergeben.
+#
+# Ohne Reboot ausprobieren, die Zahlen wirken sofort:
+#   swaymsg '[app_id="^chrome-"] resize set 100 ppt 85 ppt, move position 0 ppt 10 ppt'
+HINT
 }
+
+# Kopiert die authorized_keys vom Datentraeger nach /root/.ssh. Kopie statt
+# Symlink oder bind-mount: sshd prueft mit StrictModes Eigentuemer und Rechte
+# der Datei und ihrer Verzeichnisse, und was auf einem fremden Stick steht,
+# ist nicht vorhersagbar. Nur der USB-Zweig ruft das auf - im tmpfs-Fallback
+# gibt es nichts zu kopieren und damit auch keinen SSH-Zugang.
+install_ssh_keys() {
+    local src="${TARGET}/${SSH_KEYS_REL}" count
+    if [[ ! -f "${src}" || ! -s "${src}" ]]; then
+        log "kein ${SSH_KEYS_REL} auf dem Datentraeger, SSH-Zugang bleibt zu"
+        return 0
+    fi
+    mkdir -p -- /root/.ssh
+    chmod 0700 /root/.ssh
+    if install -o root -g root -m 0600 -- "${src}" /root/.ssh/authorized_keys; then
+        count="$(grep -cve '^[[:space:]]*\(#\|$\)' "${src}" || true)"
+        log "authorized_keys von ${src} uebernommen (${count} Schluessel)"
+    else
+        log "WARNUNG: ${src} konnte nicht nach /root/.ssh kopiert werden"
+    fi
+}
+
+# Setzt die Zeitzone systemweit aus einer Datei auf dem Datentraeger. Der
+# Image-Default (Europe/Berlin, /etc/localtime) gilt, solange keine Datei da
+# ist - so braucht die Flotte in einer Zeitzone gar nichts, nur Ausreisser
+# eine Zeile. Systemweit statt nur im Browser, damit auch die Journal-Logs in
+# Ortszeit stehen. Laeuft vor getty@tty1, also bevor sway und Chromium starten:
+# der Browser erbt die Zeitzone dann beim Start. Nur im USB-Zweig, wie die Keys.
+apply_timezone() {
+    local src="${TARGET}/${TZ_REL}" zone
+    if [[ ! -f "${src}" || ! -s "${src}" ]]; then
+        log "keine ${TZ_REL} auf dem Datentraeger, Zeitzone bleibt beim Image-Default"
+        return 0
+    fi
+    # Erste Zeile, die kein Kommentar und nicht leer ist; Leerzeichen weg.
+    zone="$(grep -m1 -vE '^[[:space:]]*(#|$)' "${src}" | tr -d '[:space:]' || true)"
+    if [[ -z "${zone}" ]]; then
+        log "${TZ_REL} enthaelt keine Zone, Zeitzone bleibt beim Image-Default"
+        return 0
+    fi
+    # Kaputter Symlink waere schlimmer als der Default - erst pruefen, ob die
+    # Zone im System existiert.
+    if [[ ! -f "/usr/share/zoneinfo/${zone}" ]]; then
+        log "WARNUNG: Zeitzone '${zone}' unbekannt (/usr/share/zoneinfo/${zone} fehlt), bleibe beim Image-Default"
+        return 0
+    fi
+    if ln -sf "/usr/share/zoneinfo/${zone}" /etc/localtime; then
+        log "Zeitzone auf ${zone} gesetzt (Override vom Datentraeger)"
+    else
+        log "WARNUNG: /etc/localtime konnte nicht auf ${zone} gesetzt werden"
+    fi
+}
+
+# Suchlauf als eigener Prozess, damit ihn ein timeout mit allen Kindern
+# abschiessen kann. Muss nach den Funktionsdefinitionen stehen.
+if [[ "${1:-}" == "--probe" ]]; then
+    pick_device
+    exit $?
+fi
 
 mkdir -p -- "${TARGET}"
 
@@ -82,17 +224,24 @@ if mountpoint -q -- "${TARGET}"; then
 fi
 
 device=""
-if device="$(pick_device)"; then
+# timeout legt den Suchlauf in eine eigene Prozessgruppe und raeumt bei
+# Ablauf auch dessen blkid/udevadm-Kinder ab (124 -> tmpfs-Zweig).
+# Explizit ueber bash starten: haengt am Skript mal kein Exec-Bit, soll der
+# Suchlauf trotzdem laufen und nicht stillschweigend im tmpfs enden.
+if device="$(timeout -k 2 "${PROBE_TIMEOUT}" bash "${BASH_SOURCE[0]}" --probe)" \
+   && [[ -n "${device}" ]]; then
     log "USB-Datentraeger gefunden: ${device}"
     # Ein abgezogener Stick hinterlaesst ein unsauberes Dateisystem.
     # -p reparient nur, was ohne Rueckfrage sicher ist; Fehler sind nicht fatal.
-    if ! timeout 120 fsck.ext4 -p -- "${device}"; then
+    if ! timeout 60 fsck.ext4 -p -- "${device}"; then
         log "WARNUNG: fsck auf ${device} nicht sauber durchgelaufen"
     fi
-    if mount -t ext4 -o rw,noatime,nodev,nosuid -- "${device}" "${TARGET}"; then
+    if timeout 30 mount -t ext4 -o rw,noatime,nodev,nosuid -- "${device}" "${TARGET}"; then
         log "${device} auf ${TARGET} gemountet, Daten sind persistent"
         printf 'usb %s\n' "${device}" >"${SOURCE_MARKER}"
         prepare_layout
+        install_ssh_keys
+        apply_timezone
         exit 0
     fi
     log "WARNUNG: mount von ${device} fehlgeschlagen, fange auf tmpfs zurueck"
