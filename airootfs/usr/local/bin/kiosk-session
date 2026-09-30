@@ -84,18 +84,23 @@ fi
 # Fullscreen NICHT in der for_window-Regel: die greift beim Mappen des Fensters,
 # aber Chromiums --kiosk setzt seinen eigenen Fullscreen teils erst danach und
 # ueberschreibt sie - gemessen blieb dann ein Fenster fs=0, das andere fs=1,
-# nicht deterministisch. Stattdessen nach dem Start wiederholt durchsetzen:
-# ein Hintergrundprozess (Fork VOR dem exec, ueberlebt es also) setzt ueber die
-# ersten ~15s mehrfach "fullscreen enable". Idempotent, und der letzte Durchlauf
-# liegt sicher nach Chromiums Fullscreen-Request, egal wie das Race ausgeht.
+# nicht deterministisch. Stattdessen durchsetzen, solange die Session laeuft:
+# ein Hintergrundprozess (Fork VOR dem exec, ueberlebt es also) abonniert die
+# Window-Events von sway und setzt jedes unserer Fenster, das fs=0 meldet,
+# sofort wieder auf Vollbild. Frueher waren das sechs Versuche in den ersten
+# ~15 s - auf einem Laptop mit Panel + HDMI stand das HDMI-Fenster danach
+# trotzdem mit fs=0 und Chromium-Leiste da. Das Abo faengt auch ein spaeteres
+# Zuruecksetzen und einen neu gestarteten Browser (Freeze-Neustart) ab.
 if (( ${#display_flags[@]} >= 2 )); then
     (
-        for _ in 1 2 3 4 5 6; do
-            sleep 3
-            for out in "${kiosk_displays[@]}"; do
-                swaymsg "[app_id=\"miniclientcontrol-${out}\"] fullscreen enable" >/dev/null 2>&1 || true
+        swaymsg -m -t subscribe '["window"]' |
+            jq --unbuffered -r '
+                select(.container.app_id // "" | startswith("miniclientcontrol-"))
+                | select(.container.fullscreen_mode == 0)
+                | .container.app_id' |
+            while read -r app; do
+                swaymsg "[app_id=\"${app}\"] fullscreen enable" >/dev/null 2>&1 || true
             done
-        done
     ) &
 fi
 
