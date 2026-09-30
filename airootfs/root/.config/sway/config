@@ -5,6 +5,17 @@ default_border none
 default_floating_border none
 focus_follows_mouse no
 
+# Maus und Touchpad aus. Unsichtbar allein reicht nicht: ein Zeiger am oberen
+# Rand blendet Chromiums Leiste ein, auch wenn man ihn nicht sieht. Ein
+# Touchscreen ist type:touch und bleibt an. Zum Debuggen per Stick wieder
+# einschalten (sway.d/*.conf wird weiter unten gelesen und gewinnt):
+#     input type:pointer events enabled
+#     input type:touchpad events enabled
+input type:pointer events disabled
+input type:touchpad events disabled
+# Und falls doch ein Zeiger da ist: nach 1 ms Stillstand ausblenden.
+seat * hide_cursor 1
+
 # Der Bereich, den kein Fenster belegt, ist sonst der sway-Default-Hintergrund.
 # Schwarz, damit unter einer Blende oder Scheibe nichts leuchtet.
 output * bg #000000 solid_color
