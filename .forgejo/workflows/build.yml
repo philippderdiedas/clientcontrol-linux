@@ -24,7 +24,13 @@ jobs:
   image:
     runs-on: archiso
     env:
-      CARGO_HOME: ${{ github.workspace }}/.cargo
+      # Cargo-Stand fest auf dem Runner statt im Workspace: der Workspace-Pfad
+      # (/root/.cache/act/<hash>/...) ist pro Lauf neu, und Cargo fingerprintet
+      # Dependencies ueber ihren absoluten Quellpfad - mit CARGO_HOME im
+      # Workspace wurden trotz Cache-Hit jedes Mal alle ~230 Crates neu gebaut
+      # (7 min). Runner hat Kapazitaet 1; parallel wuerde Cargo per Lock warten.
+      CARGO_HOME: /var/cache/kiosk-ci/cargo
+      CARGO_TARGET_DIR: /var/cache/kiosk-ci/target
       CARGO_BUILD_JOBS: "2"   # VM hat wenig RAM; weniger parallele rustc = kleinerer Peak
     steps:
       # Hauptrepo mit dem automatischen Job-Token. Submodule NICHT hier, weil
@@ -48,29 +54,10 @@ jobs:
           git -c url."ssh://git@${GITHUB_SERVER_URL#https://}/".insteadOf="${GITHUB_SERVER_URL}/" \
             submodule update --init --recursive --depth 1
 
-      - name: cache cargo
-        uses: actions/cache@v4
-        with:
-          key: cargo-${{ hashFiles('miniclientcontrol/Cargo.lock') }}
-          restore-keys: cargo-
-          path: |
-            .cargo/registry
-            miniclientcontrol/target
-
       - name: build netboot image
         run: ./build.sh
         env:
           BUILDMODE: netboot
-
-      - name: upload workflow artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: kiosk-netboot
-          path: |
-            out/arch/boot/x86_64/vmlinuz-linux
-            out/arch/boot/x86_64/initramfs-linux.img
-            out/arch/x86_64/airootfs.sfs
-            out/arch/x86_64/airootfs.sha512
 
       - name: publish github release assets
         if: startsWith(github.ref, 'refs/tags/')

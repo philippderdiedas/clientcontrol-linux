@@ -37,10 +37,12 @@ if [[ "${SKIP_RUST:-0}" != 1 ]]; then
     msg "Baue ${BINARY_NAME} (release)"
     cargo build --release --locked --manifest-path "${SUBMODULE_DIR}/Cargo.toml"
 
-    built="${SUBMODULE_DIR}/target/release/${BINARY_NAME}"
+    # CARGO_TARGET_DIR setzt die CI (fester Cache auf dem Runner).
+    target_dir="${CARGO_TARGET_DIR:-${SUBMODULE_DIR}/target}"
+    built="${target_dir}/release/${BINARY_NAME}"
     if [[ ! -x "${built}" ]]; then
-        printf 'Vorhandene Artefakte in %s/target/release:\n' "${SUBMODULE_DIR}" >&2
-        find "${SUBMODULE_DIR}/target/release" -maxdepth 1 -type f -executable \
+        printf 'Vorhandene Artefakte in %s/release:\n' "${target_dir}" >&2
+        find "${target_dir}/release" -maxdepth 1 -type f -executable \
             -printf '  %f\n' 2>/dev/null >&2 || true
         die "${built} nicht gefunden - heisst die Binary anders? BINARY_NAME anpassen."
     fi
