@@ -1,14 +1,18 @@
-# Baut das Kiosk-Netboot-Image und haengt die Boot-Dateien bei einem Tag als
-# Release-Assets an. Ein 3rd-party-Dienst zieht sie von dort.
+# Baut das Kiosk-Netboot-Image. Bei einem Tag v* haengen die Boot-Dateien als
+# Assets am GitHub-Release (ci/github-release.sh) und am Forgejo-Release
+# (ci/release.sh). Ausgerollt wird, indem k8s-flux den Tag im
+# netbootxyz-Deployment pinnt; dessen initContainer laedt vom GitHub-Release.
 #
 # Laeuft auf einem selbst gehosteten act_runner mit dem Label `archiso`, der als
 # root im host-Executor arbeitet (mkarchiso braucht root und mountet
 # /proc, /sys, /dev - das geht nicht im Container). Der Runner braucht:
 #   mkarchiso, arch-install-scripts, cargo/rust, git, curl, jq.
 #
-# Voraussetzung fuer den recursive Checkout: das Submodule miniclientcontrol
-# liegt auf DERSELBEN Forgejo-Instanz wie dieses Repo, dann reicht der
-# automatische Job-Token. (git submodule set-url + .gitmodules anpassen.)
+# .gitmodules nennt das Submodule relativ (../miniclientcontrol.git), damit
+# derselbe Stand auf Forgejo und auf dem GitHub-Mirror klont.
+#
+# Secrets: SUBMODULE_SSH_KEY (s.u.), GH_RELEASE_TOKEN (fine-grained PAT auf
+# den GitHub-Mirror, Contents read/write) fuer die GitHub-Release-Assets.
 
 name: build
 on:
@@ -30,7 +34,8 @@ jobs:
 
       # Submodule miniclientcontrol ueber einen read-only Deploy-Key holen
       # (Secret SUBMODULE_SSH_KEY; oeffentlicher Teil liegt als Deploy-Key im
-      # miniclientcontrol-Repo). .gitmodules zeigt dafuer auf die ssh-URL.
+      # miniclientcontrol-Repo). Die relative URL aus .gitmodules loest gegen
+      # die https-URL des Checkouts auf; insteadOf biegt sie auf ssh um.
       - name: fetch submodule (deploy key)
         env:
           SUBMODULE_SSH_KEY: ${{ secrets.SUBMODULE_SSH_KEY }}
@@ -40,7 +45,8 @@ jobs:
           printf '%s\n' "$SUBMODULE_SSH_KEY" > "$key"
           export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
           git submodule sync --recursive
-          git submodule update --init --recursive --depth 1
+          git -c url."ssh://git@${GITHUB_SERVER_URL#https://}/".insteadOf="${GITHUB_SERVER_URL}/" \
+            submodule update --init --recursive --depth 1
 
       - name: cache cargo
         uses: actions/cache@v4
@@ -65,6 +71,15 @@ jobs:
             out/arch/boot/x86_64/initramfs-linux.img
             out/arch/x86_64/airootfs.sfs
             out/arch/x86_64/airootfs.sha512
+
+      - name: publish github release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        run: ./ci/github-release.sh
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+          GH_REPO: philippderdiedas/clientcontrol-linux
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
 
       - name: publish release assets
         if: startsWith(github.ref, 'refs/tags/')
