@@ -13,6 +13,8 @@
 #   WORK_DIR    Arbeitsverzeichnis, Standard: work
 #   OUT_DIR     Ausgabeverzeichnis, Standard: out
 #   SKIP_RUST   =1 ueberspringt den Rust-Build (nutzt eine vorhandene Binary)
+#   KIOSK_VERSION  Version des Images, im Web-UI neben dem Controller-Commit
+#               (die CI setzt bei einem Tag den Tag). Standard: git describe.
 
 set -euo pipefail
 
@@ -58,6 +60,13 @@ else
 fi
 
 # --- 2. Image ------------------------------------------------------------
+
+# Welche Image-Version das ist. kiosk-session reicht sie als SYSTEM_VERSION an
+# miniclientcontrol weiter, das sie neben seinem eigenen Commit anzeigt. Erst
+# hier geschrieben, damit sie auch bei SKIP_RUST=1 stimmt.
+KIOSK_VERSION="${KIOSK_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo unknown)}"
+msg "Image-Version ${KIOSK_VERSION}"
+printf 'SYSTEM_VERSION=%s\n' "${KIOSK_VERSION}" > airootfs/etc/kiosk-release
 
 [[ "${EUID}" -eq 0 ]] || die "mkarchiso braucht root. Mit sudo aufrufen."
 

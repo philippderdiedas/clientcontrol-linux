@@ -58,6 +58,9 @@ jobs:
         run: ./build.sh
         env:
           BUILDMODE: netboot
+          # Bei einem Tag genau der Tag; sonst leer, dann nimmt build.sh
+          # git describe (der flache Checkout hat keine Tags: ein Commit-SHA).
+          KIOSK_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
 
       - name: publish github release assets
         if: startsWith(github.ref, 'refs/tags/')

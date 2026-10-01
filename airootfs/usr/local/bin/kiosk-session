@@ -7,6 +7,7 @@
 #
 # Konfiguration, in dieser Reihenfolge - spaeter gewinnt:
 #   1. /etc/default/miniclientcontrol            (im Image, unveraenderlich)
+#      /etc/kiosk-release                        (Image-Version, von build.sh)
 #   2. <datenmount>/miniclientcontrol.env        (vom USB-Stick, optional)
 #   3. MCC_EXTRA_ARGS aus einer der beiden       (rohe CLI-Flags)
 #
@@ -22,6 +23,10 @@ log() { printf 'kiosk-session: %s\n' "$*"; }
 set -a
 # shellcheck disable=SC1091
 [[ -r /etc/default/miniclientcontrol ]] && . /etc/default/miniclientcontrol
+# SYSTEM_VERSION=<Image-Version>, von build.sh ins Image geschrieben; zeigt
+# miniclientcontrol im Web-UI neben seinem Commit.
+# shellcheck disable=SC1091
+[[ -r /etc/kiosk-release ]] && . /etc/kiosk-release
 
 DATA="${KIOSK_DATA_DIR:-/var/lib/miniclientcontrol}"
 
