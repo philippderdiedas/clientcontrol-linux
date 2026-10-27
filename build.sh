@@ -37,7 +37,7 @@ if [[ "${SKIP_RUST:-0}" != 1 ]]; then
         die "${SUBMODULE_DIR}/Cargo.toml fehlt. Submodule initialisiert? git submodule update --init --recursive"
 
     msg "Baue ${BINARY_NAME} (release)"
-    cargo build --release --locked --manifest-path "${SUBMODULE_DIR}/Cargo.toml"
+    cargo build --release --locked --features native-cast --manifest-path "${SUBMODULE_DIR}/Cargo.toml"
 
     # CARGO_TARGET_DIR setzt die CI (fester Cache auf dem Runner).
     target_dir="${CARGO_TARGET_DIR:-${SUBMODULE_DIR}/target}"
