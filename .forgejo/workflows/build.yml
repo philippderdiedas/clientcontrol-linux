@@ -11,8 +11,11 @@
 # .gitmodules nennt das Submodule relativ (../miniclientcontrol.git), damit
 # derselbe Stand auf Forgejo und auf dem GitHub-Mirror klont.
 #
-# Secrets: SUBMODULE_SSH_KEY (s.u.), GH_RELEASE_TOKEN (fine-grained PAT auf
-# den GitHub-Mirror, Contents read/write) fuer die GitHub-Release-Assets.
+# Secrets: SUBMODULE_SSH_KEY (Deploy-Key am miniclientcontrol-Repo im Forgejo),
+# CASTTARGET_SSH_KEY (Deploy-Key am casttarget-Repo auf git.fablab-luebeck.de -
+# casttarget ist ein geschachteltes Submodule von miniclientcontrol auf einem
+# anderen Host), GH_RELEASE_TOKEN (fine-grained PAT auf den GitHub-Mirror,
+# Contents read/write) fuer die GitHub-Release-Assets.
 
 name: build
 on:
@@ -38,18 +41,33 @@ jobs:
       # anderen (privaten) Repo.
       - uses: actions/checkout@v4
 
-      # Submodule miniclientcontrol ueber einen read-only Deploy-Key holen
-      # (Secret SUBMODULE_SSH_KEY; oeffentlicher Teil liegt als Deploy-Key im
-      # miniclientcontrol-Repo). Die relative URL aus .gitmodules loest gegen
-      # die https-URL des Checkouts auf; insteadOf biegt sie auf ssh um.
-      - name: fetch submodule (deploy key)
+      # Submodule rekursiv holen. Zwei read-only Deploy-Keys, per-Host zugeordnet
+      # ueber eine ssh-config:
+      #   - miniclientcontrol liegt im Forgejo (relative URL aus .gitmodules;
+      #     insteadOf biegt die https-URL des Checkouts auf ssh um) -> der
+      #     Forgejo-Host faellt unter "Host *" und nimmt SUBMODULE_SSH_KEY;
+      #   - casttarget ist ein geschachteltes Submodule von miniclientcontrol auf
+      #     git.fablab-luebeck.de -> eigener Host-Block mit CASTTARGET_SSH_KEY.
+      - name: fetch submodules (deploy keys)
         env:
           SUBMODULE_SSH_KEY: ${{ secrets.SUBMODULE_SSH_KEY }}
+          CASTTARGET_SSH_KEY: ${{ secrets.CASTTARGET_SSH_KEY }}
         run: |
-          key="$RUNNER_TEMP/submodule_key"
-          install -m600 /dev/null "$key"
-          printf '%s\n' "$SUBMODULE_SSH_KEY" > "$key"
-          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          mckey="$RUNNER_TEMP/submodule_key"
+          ctkey="$RUNNER_TEMP/casttarget_key"
+          install -m600 /dev/null "$mckey"
+          install -m600 /dev/null "$ctkey"
+          printf '%s\n' "$SUBMODULE_SSH_KEY" > "$mckey"
+          printf '%s\n' "$CASTTARGET_SSH_KEY" > "$ctkey"
+          cfg="$RUNNER_TEMP/ssh_config"
+          {
+            printf 'Host git.fablab-luebeck.de\n'
+            printf '    IdentityFile %s\n    IdentitiesOnly yes\n    StrictHostKeyChecking accept-new\n' "$ctkey"
+            printf 'Host *\n'
+            printf '    IdentityFile %s\n    IdentitiesOnly yes\n    StrictHostKeyChecking accept-new\n' "$mckey"
+          } > "$cfg"
+          chmod 600 "$cfg"
+          export GIT_SSH_COMMAND="ssh -F $cfg"
           git submodule sync --recursive
           git -c url."ssh://git@${GITHUB_SERVER_URL#https://}/".insteadOf="${GITHUB_SERVER_URL}/" \
             submodule update --init --recursive --depth 1
