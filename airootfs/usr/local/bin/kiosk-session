@@ -80,10 +80,18 @@ mapfile -t kiosk_displays < <(swaymsg -t get_outputs | kiosk-discover-displays)
 for out in "${kiosk_displays[@]}"; do
     display_flags+=(--display "${out}")
     swaymsg "for_window [app_id=\"miniclientcontrol-${out}\"] move container to output ${out}"
+    # native-cast: das Player-Fenster (casttarget-<out>) soll beim Casten
+    # fullscreen VOR dem Chromium auf genau diesem Output stehen. Fullscreen hier
+    # direkt in der Regel (anders als Chromium): mpv/ffplay setzen keinen eigenen
+    # --kiosk-Fullscreen, der mit der Regel rennt.
+    swaymsg "for_window [app_id=\"casttarget-${out}\"] move container to output ${out}, fullscreen enable"
     log "Display ${out} deklariert und auf Output ${out} gebunden"
 done
 if (( ${#display_flags[@]} == 0 )); then
     log "ein Monitor oder keiner - Legacy-Start ohne --display"
+    # Legacy: ein impliziter Schirm namens "default" -> Player casttarget-default
+    # auf dem einzigen Output fullscreen.
+    swaymsg 'for_window [app_id="casttarget-default"] fullscreen enable'
 fi
 
 # Fullscreen NICHT in der for_window-Regel: die greift beim Mappen des Fensters,

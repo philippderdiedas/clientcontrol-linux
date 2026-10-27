@@ -50,3 +50,10 @@ avahi
 # jq: kiosk-session parst damit die JSON-Ausgabe von "swaymsg -t get_outputs"
 # fuer die Multi-Display-Discovery.
 jq
+
+# --- native-cast (Chromecast-Empfang in miniclientcontrol) ---
+# mpv spielt den WebRTC-Videostream, ffplay (aus ffmpeg) den Android-Mirror-
+# TS-Pfad. Das Fenster traegt app_id casttarget-<display>, die sway-Regel in
+# kiosk-session holt es fullscreen vor das Chromium.
+mpv
+ffmpeg
