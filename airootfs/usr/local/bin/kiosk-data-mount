@@ -2,8 +2,10 @@
 # Mountet den persistenten Datenbereich fuer miniclientcontrol.
 #
 # Reihenfolge:
-#   1. ext4-Partition auf einem USB-Geraet mit LABEL=KIOSKDATA
-#   2. sonst erste ext4-Partition auf einem USB-Geraet
+#   1. ext4-Partition mit LABEL=KIOSKDATA (egal welcher Bus - geht auch auf
+#      einem virtio/sata-Laufwerk in einer VM, nicht nur USB)
+#   2. sonst erste ext4-Partition auf einem USB-Geraet (unbenannter Stick;
+#      USB bleibt hier Bedingung, damit keine interne ext4 gegriffen wird)
 #   3. sonst tmpfs (Daten sind dann fluechtig)
 #
 # Konfiguration ueber /etc/default/miniclientcontrol.
@@ -33,7 +35,7 @@ log() { printf 'kiosk-data: %s\n' "$*"; }
 
 # Alle ext4-Partitionen auf USB-Geraeten, die noch nicht gemountet sind.
 # Gibt Zeilen "<device> <label>" aus.
-usb_ext4_candidates() {
+ext4_candidates() {
     local dev bus label
     for dev in /dev/sd*[0-9] /dev/mmcblk*p[0-9]* /dev/nvme*n*p[0-9]*; do
         [[ -b "${dev}" ]] || continue
@@ -44,28 +46,34 @@ usb_ext4_candidates() {
         [[ "$(timeout 3 blkid -o value -s TYPE "${dev}" 2>/dev/null || true)" == ext4 ]] || continue
         # Bereits gemountet? Nicht anfassen.
         timeout 3 findmnt -rno TARGET --source "${dev}" >/dev/null 2>&1 && continue
+        # Bus nur noch mitgeben (nicht filtern): das Partlabel KIOSKDATA
+        # gewinnt bus-unabhaengig (so geht auch ein virtio/sata-Laufwerk in
+        # einer VM). USB bleibt Bedingung fuer den unbenannten Fallback, damit
+        # eine interne ext4 ohne Label nicht versehentlich gegriffen wird.
         bus="$(timeout 3 udevadm info --query=property --name="${dev}" 2>/dev/null |
                sed -n 's/^ID_BUS=//p' || true)"
-        [[ "${bus}" == usb ]] || continue
         label="$(timeout 3 blkid -o value -s LABEL "${dev}" 2>/dev/null || true)"
-        printf '%s %s\n' "${dev}" "${label}"
+        # \037 (unit separator) als Trenner statt Tab: Tab ist IFS-whitespace,
+        # da wuerde ein leeres Label (dev<tab><tab>bus) kollabieren und die
+        # Felder verrutschen. \037 ist nicht-whitespace -> leere Felder bleiben.
+        printf '%s\037%s\037%s\n' "${dev}" "${label}" "${bus}"
     done
 }
 
 # USB-Enumeration braucht nach dem Boot einen Moment. Warten, bis ein
 # Kandidat auftaucht oder das Zeitfenster ablaeuft.
 pick_device() {
-    local deadline=$((SECONDS + WAIT_SECS)) dev label first=""
+    local deadline=$((SECONDS + WAIT_SECS)) dev label bus first=""
     while :; do
-        # Ein Durchlauf liefert beides: den bevorzugten Label sofort, sonst
-        # das erste ext4-USB-Geraet als Rueckfallposition.
+        # Ein Durchlauf liefert beides: die Partition mit LABEL=KIOSKDATA sofort
+        # (egal welcher Bus), sonst das erste ext4-USB-Geraet als Rueckfall.
         first=""
-        while read -r dev label; do
+        while IFS=$'\037' read -r dev label bus; do
             [[ "${label}" == "${LABEL}" ]] && { printf '%s' "${dev}"; return 0; }
-            [[ -z "${first}" ]] && first="${dev}"
+            [[ -z "${first}" && "${bus}" == usb ]] && first="${dev}"
             # Auch mitten in der Geraeteliste abbrechen, wenn die Zeit um ist.
             (( SECONDS >= deadline )) && break
-        done < <(usb_ext4_candidates)
+        done < <(ext4_candidates)
 
         [[ -n "${first}" ]] && { printf '%s' "${first}"; return 0; }
 
@@ -238,7 +246,7 @@ if device="$(timeout -k 2 "${PROBE_TIMEOUT}" bash "${BASH_SOURCE[0]}" --probe)" 
     fi
     if timeout 30 mount -t ext4 -o rw,noatime,nodev,nosuid -- "${device}" "${TARGET}"; then
         log "${device} auf ${TARGET} gemountet, Daten sind persistent"
-        printf 'usb %s\n' "${device}" >"${SOURCE_MARKER}"
+        printf 'disk %s\n' "${device}" >"${SOURCE_MARKER}"
         prepare_layout
         install_ssh_keys
         apply_timezone
