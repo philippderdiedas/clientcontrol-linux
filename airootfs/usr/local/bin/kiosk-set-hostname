@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Setzt den Kiosk-Hostnamen. Quelle in dieser Reihenfolge:
+#   1. Kernel-cmdline  kiosk.hostname=<name>  (pro MAC-ipxe, server-seitig,
+#      kein physischer Zugriff noetig)
+#   2. ${DATA}/hostname auf der Datenpartition (ext4-Stick), analog zu timezone
+#   3. sonst: Hostname unveraendert lassen (Image-Default)
+#
+# Laeuft VOR avahi und VOR dem autologin, damit der .local-Name und
+# miniclientcontrols cast device_id (Cert + Hostname) den echten Namen tragen.
+set -uo pipefail
+log() { printf 'kiosk-hostname: %s\n' "$*"; }
+
+DATA="${KIOSK_DATA_DIR:-/var/lib/miniclientcontrol}"
+
+name=""
+# 1. Kernel-cmdline. Letztes Vorkommen gewinnt.
+for tok in $(cat /proc/cmdline 2>/dev/null); do
+    case "${tok}" in
+        kiosk.hostname=*) name="${tok#kiosk.hostname=}" ;;
+    esac
+done
+# 2. Datei auf der Datenpartition (nur wenn cmdline nichts lieferte).
+if [[ -z "${name}" && -r "${DATA}/hostname" ]]; then
+    name="$(tr -d '[:space:]' < "${DATA}/hostname")"
+fi
+
+current() { cat /proc/sys/kernel/hostname 2>/dev/null; }
+
+if [[ -z "${name}" ]]; then
+    log "keine Quelle (cmdline/Datei), Hostname bleibt $(current)"
+    exit 0
+fi
+
+# Validieren als RFC-1123-Label: [A-Za-z0-9-], 1..63 Zeichen, nicht mit - am Rand.
+if [[ ! "${name}" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; then
+    log "ungueltiger Hostname '${name}' - ignoriert, Default bleibt"
+    exit 0
+fi
+
+# Das Image hat kein hostname(1). /proc/sys/kernel/hostname setzt den
+# Kernel-Namen sofort und ohne Abhaengigkeit (avahi startet danach und liest
+# ihn). hostnamectl zusaetzlich fuer den statischen/pretty-Namen, falls dbus
+# schon da ist; /etc/hostname fuer alles, was es nachliest.
+if printf '%s' "${name}" > /proc/sys/kernel/hostname 2>/dev/null; then
+    printf '%s\n' "${name}" > /etc/hostname 2>/dev/null || true
+    hostnamectl set-hostname "${name}" >/dev/null 2>&1 || true
+    log "Hostname auf '${name}' gesetzt"
+else
+    log "WARNUNG: Hostname '${name}' liess sich nicht setzen"
+fi

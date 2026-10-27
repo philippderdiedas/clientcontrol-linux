@@ -99,6 +99,19 @@ prepare_layout() {
 # Gueltige Namen listet:  ls /usr/share/zoneinfo   (z.B. Europe/Zurich)
 # Greift beim naechsten Boot.
 HINT
+    [[ -e "${TARGET}/hostname.example" ]] || \
+    cat >"${TARGET}/hostname.example" <<'HINT' || true
+# Diese Datei ohne ".example" umbenennen (also nur "hostname"), um den
+# Hostnamen des Kiosks zu setzen - wirkt auf den avahi .local-Namen und die
+# cast-Geraete-ID. Vorrang hat aber die Kernel-cmdline kiosk.hostname=<name>
+# (pro Maschine in der MAC-ipxe am netboot-Server), falls gesetzt.
+#
+# Eine Zeile, ein RFC-1123-Name (Buchstaben/Ziffern/Bindestrich, max 63):
+#
+#   foyer-01
+#
+# Greift beim naechsten Boot.
+HINT
     [[ -e "${TARGET}/ssh/authorized_keys.example" ]] || \
     cat >"${TARGET}/ssh/authorized_keys.example" <<'HINT' || true
 # Diese Datei ohne ".example" umbenennen, dann wird sie beim Boot nach

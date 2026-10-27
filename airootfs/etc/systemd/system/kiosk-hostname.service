@@ -1,0 +1,18 @@
+[Unit]
+Description=Kiosk-Hostname aus cmdline/Datenpartition setzen
+Documentation=file:///usr/local/bin/kiosk-set-hostname
+# Nach dem Mount (liest ggf. ${DATA}/hostname), aber vor avahi (publisht den
+# .local-Namen), dem autologin (miniclientcontrol baut die cast device_id aus
+# Cert + Hostname) und logind.
+After=kiosk-data.service
+Before=getty@tty1.service avahi-daemon.service systemd-logind.service
+ConditionPathExists=/usr/local/bin/kiosk-set-hostname
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/kiosk-set-hostname
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target
