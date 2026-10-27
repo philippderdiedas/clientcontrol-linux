@@ -117,6 +117,24 @@ if (( ${#display_flags[@]} >= 2 )); then
     ) &
 fi
 
+# native-cast Teardown: das Player-Fenster (casttarget-*) steht beim Casten
+# fullscreen vor Chromium; sway kennt nur ein Fullscreen pro Output, also verliert
+# Chromium dabei seinen Slot und bekommt ihn beim Schliessen des Players NICHT von
+# selbst zurueck (sonst steht danach die Chromium-Leiste da). Ein Abo auf das
+# window-close-Event eines casttarget-Fensters holt Chromiums Vollbild zurueck.
+# Laeuft fuer JEDE Monitorzahl - der Fullscreen-Watcher oben greift nur bei >=2,
+# der Single-Display-Kiosk haette sonst gar keine Wiederherstellung.
+(
+    swaymsg -m -t subscribe '["window"]' |
+        jq --unbuffered -r '
+            select(.change == "close")
+            | select(.container.app_id // "" | startswith("casttarget-"))
+            | .container.app_id' |
+        while read -r _app; do
+            swaymsg "[app_id=\"^miniclientcontrol-\"] fullscreen enable" >/dev/null 2>&1 || true
+        done
+) &
+
 # --no-sandbox: Chromium laeuft hier als root und verweigert sonst den Start.
 # --ozone-platform=wayland: sonst faellt es auf X11 zurueck, das es nicht gibt.
 # miniclientcontrol startet Chromium selbst (siehe --no-launch-browser in
