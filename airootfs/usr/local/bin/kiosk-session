@@ -41,6 +41,14 @@ else
 fi
 set +a
 
+# native-cast darf die cast.db beim ersten Boot von der AirServer-API holen.
+# Ohne dieses Egress-Opt-in startet der Chromecast-Receiver auf einem frischen
+# Kiosk nicht - die cast.db (Geraete-Zertifikat) ist leer und laesst sich nur per
+# Fetch provisionieren. Standard an; per ${DATA}/miniclientcontrol.env (oder
+# /etc/default/miniclientcontrol) mit CASTTARGET_ALLOW_EGRESS=0 abschaltbar.
+: "${CASTTARGET_ALLOW_EGRESS:=1}"
+export CASTTARGET_ALLOW_EGRESS
+
 mkdir -p -- "${DATA}/assets"
 
 # Backlight auf volle Helligkeit. Ein Kiosk soll hell leuchten, aber manche
@@ -94,45 +102,23 @@ if (( ${#display_flags[@]} == 0 )); then
     swaymsg 'for_window [app_id="casttarget-default"] fullscreen enable'
 fi
 
-# Fullscreen NICHT in der for_window-Regel: die greift beim Mappen des Fensters,
-# aber Chromiums --kiosk setzt seinen eigenen Fullscreen teils erst danach und
-# ueberschreibt sie - gemessen blieb dann ein Fenster fs=0, das andere fs=1,
-# nicht deterministisch. Stattdessen durchsetzen, solange die Session laeuft:
-# ein Hintergrundprozess (Fork VOR dem exec, ueberlebt es also) abonniert die
-# Window-Events von sway und setzt jedes unserer Fenster, das fs=0 meldet,
-# sofort wieder auf Vollbild. Frueher waren das sechs Versuche in den ersten
-# ~15 s - auf einem Laptop mit Panel + HDMI stand das HDMI-Fenster danach
-# trotzdem mit fs=0 und Chromium-Leiste da. Das Abo faengt auch ein spaeteres
-# Zuruecksetzen und einen neu gestarteten Browser (Freeze-Neustart) ab.
-if (( ${#display_flags[@]} >= 2 )); then
-    (
-        swaymsg -m -t subscribe '["window"]' |
-            jq --unbuffered -r '
-                select(.container.app_id // "" | startswith("miniclientcontrol-"))
-                | select(.container.fullscreen_mode == 0)
-                | .container.app_id' |
-            while read -r app; do
-                swaymsg "[app_id=\"${app}\"] fullscreen enable" >/dev/null 2>&1 || true
-            done
-    ) &
-fi
-
-# native-cast Teardown: das Player-Fenster (casttarget-*) steht beim Casten
-# fullscreen vor Chromium; sway kennt nur ein Fullscreen pro Output, also verliert
-# Chromium dabei seinen Slot und bekommt ihn beim Schliessen des Players NICHT von
-# selbst zurueck (sonst steht danach die Chromium-Leiste da). Ein Abo auf das
-# window-close-Event eines casttarget-Fensters holt Chromiums Vollbild zurueck.
-# Laeuft fuer JEDE Monitorzahl - der Fullscreen-Watcher oben greift nur bei >=2,
-# der Single-Display-Kiosk haette sonst gar keine Wiederherstellung.
+# Vollbild-Reconcile. Fullscreen NICHT fest in der for_window-Regel: die greift
+# nur beim Mappen, und Chromiums --kiosk ueberschreibt sie teils danach (gemessen:
+# ein Fenster fs=0, das andere fs=1, nicht deterministisch). Stattdessen ein
+# Hintergrundprozess (Fork VOR dem exec, ueberlebt es also), der auf jedes
+# sway-window-Event reagiert und pro Output das Chromium-Fenster ins Vollbild
+# zieht - AUSSER der Output castet gerade (ein casttarget-Fenster steht davor),
+# dann in Ruhe lassen, sonst wuerde der Reconcile dem Cast den Vollbild-Slot
+# klauen. Endet der Cast, ist das casttarget-Fenster weg und Chromium wird wieder
+# fullscreen. Das deckt dreierlei ab: den anfaenglichen --kiosk-Race, einen
+# neugestarteten Browser, und das native-cast-Teardown - fuer JEDE Monitorzahl,
+# also auch Multi-Display mit mehreren gleichzeitigen Casts (jeder Output fuer
+# sich). kiosk-fullscreen-reconcile macht einen Durchlauf.
 (
-    swaymsg -m -t subscribe '["window"]' |
-        jq --unbuffered -r '
-            select(.change == "close")
-            | select(.container.app_id // "" | startswith("casttarget-"))
-            | .container.app_id' |
-        while read -r _app; do
-            swaymsg "[app_id=\"^miniclientcontrol-\"] fullscreen enable" >/dev/null 2>&1 || true
-        done
+    kiosk-fullscreen-reconcile
+    swaymsg -m -t subscribe '["window"]' | while read -r _ev; do
+        kiosk-fullscreen-reconcile
+    done
 ) &
 
 # --no-sandbox: Chromium laeuft hier als root und verweigert sonst den Start.

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Ein Durchlauf der Vollbild-Reconcile fuer kiosk-session.
+#
+# Pro sway-Output: steht ein casttarget-* Fenster (laufender Cast) davor, nichts
+# tun (sonst klaut der Reconcile dem Player den Vollbild-Slot). Sonst jedes
+# miniclientcontrol-* Fenster dieses Outputs, das NICHT im Vollbild ist (fs=0),
+# ins Vollbild ziehen. So bekommt Chromium nach dem Cast-Ende (casttarget-Fenster
+# weg) seinen Slot zurueck, und auf Multi-Display laufen mehrere Casts
+# unabhaengig - jeder Output wird einzeln betrachtet.
+#
+# Braucht SWAYSOCK aus der Umgebung (kiosk-session wird von sway ge-exec't).
+set -uo pipefail
+
+swaymsg -t get_tree 2>/dev/null | jq -r '
+    .nodes[]? | select(.type == "output")
+    | [.. | objects | select(.app_id != null)] as $wins
+    | if ($wins | any(.app_id | startswith("casttarget-"))) then
+        empty
+      else
+        $wins[]
+        | select((.app_id | startswith("miniclientcontrol-")) and (.fullscreen_mode == 0))
+        | .app_id
+      end
+' | while read -r app; do
+    [[ -n "${app}" ]] || continue
+    swaymsg "[app_id=\"${app}\"] fullscreen enable" >/dev/null 2>&1 || true
+done
